@@ -35,7 +35,7 @@ const Extension = () => {
     <>      
       <s-box padding="small">
         {hasGiftProduct ? (
-          <s-text>Having gift product in your cart you can't apply your store credit money</s-text>
+          <s-text>Having gift product in your cart, you can't apply your store credit.</s-text>
         ) : (
           <>
             <s-text-field
