@@ -18,7 +18,7 @@ const Extension = () => {
     if (cart && cart.lineItems) {
       setLineItems(cart.lineItems);
       setLineItemCount(cart.lineItems.length);
-       if (cart.lineItems.length == 0) {
+       if (cart.lineItems.length == 0 ) {
         shopify.cart.clearCart();
       }
       

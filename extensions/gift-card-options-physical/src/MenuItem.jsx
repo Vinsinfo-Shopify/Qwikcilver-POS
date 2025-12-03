@@ -29,7 +29,7 @@ function Extension() {
 
         const hasBoth =
           tags.includes("qc_giftcard") &&
-          !tags.includes("physical_qc_gc");
+          tags.includes("physical_qc_gc");
 
         setIsGiftCard(hasBoth);
       } catch (error) {
