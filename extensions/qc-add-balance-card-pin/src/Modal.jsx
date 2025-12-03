@@ -14,7 +14,7 @@ const Extension = () => {
   const [gPin, setGPin] = useState("");
 
   const secretKey = "zyuief7tyzq0ic8";
-  const shopDomain = "bonjovi-claimcode-prod-plus.myshopify.com";
+  const shopDomain = shopify.session.currentSession.shopDomain;
 
   function generateHashHeaders(customerId) {
     const now = new Date();
@@ -107,9 +107,9 @@ useEffect(() => {
 
 
   return (
-    <>
+    <s-box padding="small">
       {customer ? (
-        <s-box padding="small">
+        <>
           <s-text>Your Wallet Balance is {walletBalance}</s-text>
           <s-divider />
 
@@ -134,10 +134,10 @@ useEffect(() => {
           >
             Add Balance
           </s-button>
-        </s-box>
+        </>
       ) : (
         <s-text>Select or Add the customer!</s-text>
       )}
-    </>
+    </s-box>
   );
 };

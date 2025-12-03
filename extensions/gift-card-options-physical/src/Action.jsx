@@ -36,7 +36,6 @@ function Extension() {
   const currentLineItem = shopify.cartLineItem;
   const [buySelf, setBuySelf] = useState('true');
   const [cardNumber, setCardNumber] = useState('');
-  const [wishMessage, setWishMessage] = useState('');
   const [isShowBuySelf, setIsShowBuySelf] = useState('loading');
 
   const handleSubmit = () => {
@@ -63,7 +62,6 @@ function Extension() {
     if (props["Buy for Self"] !== undefined) {
       setBuySelf(props["Buy for Self"] === "Yes" ? "true" : "false");
     }
-    if (props["Qc_recipient_message"]) setWishMessage(props["Qc_recipient_message"]);
     if (props["Qc_card_number"]) setCardNumber(props["Qc_card_number"]);
     async function getProductInfo() {
       const result = await queryProductMetafields(shopify.cartLineItem.productId);
@@ -108,16 +106,6 @@ function Extension() {
               required
               onInput={e => setCardNumber(e.target.value)}
             />
-            {(buySelf != 'true' || isShowBuySelf === 'false') && (
-              <>
-                <s-text type='strong'>Your Wishes!</s-text>
-                <s-text-area
-                  placeholder='Enter your message here!'
-                  value={wishMessage}
-                  onInput={e => setWishMessage(e.target.value)}
-                />
-              </>
-            )}
 
           </s-box>
         )}

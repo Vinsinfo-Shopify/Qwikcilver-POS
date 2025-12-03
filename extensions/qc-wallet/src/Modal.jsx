@@ -16,7 +16,7 @@ const Extension = () => {
   const [gCode, setGCode] = useState('');
 
   const secretKey = "zyuief7tyzq0ic8";
-  const shopDomain = "bonjovi-claimcode-prod-plus.myshopify.com";
+  const shopDomain = shopify.session.currentSession.shopDomain;
 
   function generateHashHeaders(customerId) {
     const now = new Date();
