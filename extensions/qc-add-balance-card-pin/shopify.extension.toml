@@ -1,0 +1,18 @@
+api_version = "2025-10"
+
+[[extensions]]
+type = "ui_extension"
+name = "QC Add Balance - Card Pin"
+uid = "a1d4731c-63e7-7073-93b3-703a28280d17c02fb5fa"
+handle = "qc-add-balance-card-pin"
+description = "QC Add Balance - Card Pin"
+
+# module: file that contains your extension’s source code
+# target: location where your extension appears in POS
+[[extensions.targeting]]
+module = "./src/Tile.jsx"
+target = "pos.home.tile.render"
+
+[[extensions.targeting]]
+module = "./src/Modal.jsx"
+target = "pos.home.modal.render"
