@@ -14,7 +14,7 @@ const Extension = () => {
   const [isLoading, setIsLoading] = useState(false);
 
   const secretKey = "zyuief7tyzq0ic8";
-  const shopDomain = shopify.session.currentSession.shopDomain;
+  const shopDomain = shopify.session.currentSession.shopDomain //"bonjovi-claimcode-prod-plus.myshopify.com";
 
   function generateHashHeaders(customerId) {
     const now = new Date();
@@ -41,7 +41,7 @@ const Extension = () => {
     try {
       const headers = generateHashHeaders(customerId);
       const response = await fetch(
-        `https://backend.qwikcilver.com/giftcard/wallet/balance?store=${shopDomain}&customer_id=${customerId}`,
+        `https://devftadashboard.qwikcilver.com/giftcard/wallet/balance?store=${shopDomain}&customer_id=${customerId}`,
         {
           method: "POST",
           headers,
@@ -60,7 +60,7 @@ const Extension = () => {
       const headers = generateHashHeaders(customer);
 
       const response = await fetch(
-        `https://backend.qwikcilver.com/giftcard/wallet/addgiftcard`,
+        `https://devftadashboard.qwikcilver.com/giftcard/wallet/addgiftcard`,
         {
           method: "POST",
           headers,
@@ -96,9 +96,10 @@ const Extension = () => {
       setIsLoading(true);
       const cart = shopify?.cart?.current?.value;
       if (cart?.customer?.id) {
+        // setCustomer(cart.customer.id);
         setCustomer(cart.customer.id);
         const balance = await fetchWalletBalance(cart.customer.id);
-        setWalletBalance(balance?.data?.balance || 0);
+        await setWalletBalance(balance?.data?.balance || 0);
       }
       setIsLoading(false);
     };
@@ -107,6 +108,7 @@ const Extension = () => {
 
   return (
     <s-box padding="small">
+      {/* <s-text>{customer}</s-text> */}
       {customer ? (
         <>
           <s-text>Your Wallet Balance is {walletBalance}</s-text>

@@ -14,7 +14,7 @@ const Extension = () => {
   const [gPin, setGPin] = useState("");
 
   const secretKey = "zyuief7tyzq0ic8";
-  const shopDomain = shopify.session.currentSession.shopDomain;
+  const shopDomain = shopify.session.currentSession.shopDomain //"bonjovi-claimcode-prod-plus.myshopify.com";
 
   function generateHashHeaders(customerId) {
     const now = new Date();
@@ -40,7 +40,7 @@ const Extension = () => {
     try {
       const headers = generateHashHeaders(customerId);
       const response = await fetch(
-        `https://backend.qwikcilver.com/giftcard/wallet/balance?store=${shopDomain}&customer_id=${customerId}`,
+        `https://devftadashboard.qwikcilver.com/giftcard/wallet/balance?store=${shopDomain}&customer_id=${customerId}`,
         {
           method: "POST",
           headers,
@@ -57,7 +57,7 @@ const Extension = () => {
     try {
       const headers = generateHashHeaders(customer);
       const response = await fetch(
-        `https://backend.qwikcilver.com/giftcard/wallet/addgiftcard`,
+        `https://devftadashboard.qwikcilver.com/giftcard/wallet/addgiftcard`,
         {
           method: "POST",
           headers,
