@@ -1,13 +1,12 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "578042abc6c458a50691c2922579f429"
-name = "EX-POS"
+client_id = "37d55e5761fb795d8aba3e01bce14ba6"
+name = "QC-POS"
 application_url = "https://shopify.dev/apps/default-app-home"
 embedded = true
 
 [build]
 automatically_update_urls_on_dev = true
-include_config_on_deploy = true
 
 [webhooks]
 api_version = "2026-01"
@@ -18,6 +17,3 @@ scopes = "read_products"
 
 [auth]
 redirect_urls = [ "https://shopify.dev/apps/default-app-home/api/auth" ]
-
-[pos]
-embedded = true

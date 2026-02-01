@@ -37,6 +37,7 @@ function Extension() {
   const [buySelf, setBuySelf] = useState('true');
   const [cardNumber, setCardNumber] = useState('');
   const [isShowBuySelf, setIsShowBuySelf] = useState('loading');
+  const [restrictCart, setRestrictCart] = useState("false");
 
   // Image template options
   const images = [
@@ -76,17 +77,20 @@ function Extension() {
   const handleSubmit = () => {
     const props = {};
     if (isShowBuySelf === 'true') {
-      props["Buy for Self"] = buySelf === "true" ? "Yes" : "No";
+      props['Send as Gift'] = '';
+      props["Buy for Self"] = '';
       props["_Qc_card_number"] = cardNumber;
       if (buySelf === "true") {
         // props["_Qc_recipient_message"] = "";
-        props["_Qc_img_url"] = "";
+        delete props["_Qc_img_url"];
+        props["Buy for Self"] = 'Yes';
       } else {
+        props['Send as Gift'] = "Yes";
         props["_Qc_img_url"] = selectedImage;
         // props["Qc_recipient_message"] = wishMessage;
       }
     } else {
-      props["Buy for Self"] = "No";
+      props['Send as Gift'] = "Yes";
       props["_Qc_card_number"] = cardNumber;
       props["_Qc_img_url"] = selectedImage;
       // props["Qc_recipient_message"] = wishMessage;
@@ -97,8 +101,11 @@ function Extension() {
 
   useEffect(() => {
     const props = currentLineItem.properties || {};
-    if (props["Buy for Self"] !== undefined) {
-      setBuySelf(props["Buy for Self"] === "Yes" ? "true" : "false");
+    if([props['Send as Gift']] != ''){
+      setBuySelf("false");
+    }
+    if([props['Buy for Self']] != ''){
+      setBuySelf("true");
     }
     if (props["_Qc_card_number"]) setCardNumber(props["_Qc_card_number"]);
     if (props["_Qc_img_url"]) {
@@ -115,6 +122,7 @@ function Extension() {
         setSelectedTemplateImage(templateWithImage.images);
       }
     }
+
     
     async function getProductInfo() {
       const result = await queryProductMetafields(shopify.cartLineItem.productId);
@@ -130,7 +138,34 @@ function Extension() {
       setIsShowBuySelf(value);
     }
     getProductInfo();
+    getAllTags();
   }, []);
+
+  async function getAllTags() {
+    const cartProducts = shopify.cart.current?.value?.lineItems || [];
+
+    // Fetch all products in parallel
+    const products = await Promise.all(
+      cartProducts.map(item =>
+        shopify.productSearch.fetchProductWithId(item.productId)
+      )
+    );
+
+    // Collect + normalize tags
+    const allTags = products
+      .flatMap(product => product?.tags || [])
+      .map(tag => tag.toLowerCase());
+
+    var qcGiftcardCount = allTags.join(',').split('qc_giftcard').length - 1;
+    var physicalQcGcCount = allTags.join(',').split('physical_qc_gc').length - 1;
+
+    if (physicalQcGcCount) {
+      if (qcGiftcardCount !== physicalQcGcCount) {
+        setRestrictCart("true");
+      }
+    }
+  }
+
 
   const isValid = () => {
     if (!cardNumber) return false;
@@ -138,8 +173,19 @@ function Extension() {
     return true;
   };
 
+  if(restrictCart == "true"){
+    return(
+      <s-page>
+        <s-text>You can't purchase both physical and digital gift products in the same cart. Please remove one of them.</s-text>
+      </s-page>
+    )
+  }
+
   return (
     <s-page heading="Gift Card Options - Physical">
+      <s-stack gap="small" direction="inline" justifyContent="center">
+        <s-badge tone="success">Note: Before placing the order, ensure the cart is set to ‘Ship all items.’</s-badge>
+      </s-stack>
       <s-scroll-box>
         {isShowBuySelf === 'loading' ? (
           <s-box padding="small">
@@ -147,12 +193,12 @@ function Extension() {
           </s-box>
         ) : (
           <s-box padding="small">
-            {isShowBuySelf === 'true' && (
+            {/* {isShowBuySelf === 'true' && (
               <s-choice-list values={[buySelf]} onChange={e => setBuySelf(e.target.values[0])}>
                 <s-choice value="true" selected={buySelf === 'true'}>Buy for Self</s-choice>
                 <s-choice value="false" selected={buySelf === 'false'}>Send as Gift</s-choice>
               </s-choice-list>
-            )}
+            )} */}
             <s-text type='strong'>Card Number</s-text>
             <s-number-field
               placeholder='Enter Card Number'

@@ -70,6 +70,7 @@ function Extension() {
   const [selectedImage, setSelectedImage] = useState('');
   const [selectedTemplate, setSelectedTemplate] = useState('Best Wishes');
   const [selectedTemplateImage, setSelectedTemplateImage] = useState(images[0].images);
+  const [restrictCart, setRestrictCart] = useState("false");
 
 
   const handleTemplateChange = (e) => {
@@ -93,8 +94,9 @@ function Extension() {
     setEmailError(error);
     if (error && buySelf !== "true") return;
     const props = {};
+     delete props['Send as Gift'];
+     delete props["Buy for Self"];
     if (isShowBuySelf === 'true') {
-      props["Buy for Self"] = buySelf === "true" ? "Yes" : "No";
       if (buySelf === "true") {
         delete props["_Qc_sender_name"];
         delete props["_Qc_recipient_name"];
@@ -103,7 +105,9 @@ function Extension() {
         delete props["_Qc_gift_later"];
         delete props["_Qc_scheduled_date_time"];
         delete props["_Qc_img_url"];
+        props["Buy for Self"] = 'Yes';
       } else {
+        props['Send as Gift'] = "Yes";
         props["_Qc_sender_name"] = fromName;
         props["_Qc_recipient_name"] = recipientName;
         props["_Qc_recipient_email"] = recipientEmail;
@@ -117,7 +121,7 @@ function Extension() {
         }
       }
     } else {
-      props["Buy for Self"] = "No";
+      props['Send as Gift'] = "Yes";
       props["_Qc_sender_name"] = fromName;
       props["_Qc_recipient_name"] = recipientName;
       props["_Qc_recipient_email"] = recipientEmail;
@@ -158,8 +162,14 @@ function Extension() {
 
   useEffect(() => {
     const props = currentLineItem.properties || {};
-    if (props["Buy for Self"] !== undefined) {
-      setBuySelf(props["Buy for Self"] === "Yes" ? "true" : "false");
+    // if (props["Buy for Self"] !== undefined) {
+    //   setBuySelf(props["Buy for Self"] === "Yes" ? "true" : "false");
+    // }
+    if([props['Send as Gift']]  != ''){
+      setBuySelf("false");
+    }
+    if([props['Buy for Self']] != ''){
+      setBuySelf("true");
     }
     if (props["_Qc_sender_name"] !== undefined) setFromName(props["_Qc_sender_name"]);
     if (props["_Qc_recipient_name"]) setRecipientName(props["_Qc_recipient_name"]);
@@ -205,7 +215,33 @@ function Extension() {
       setIsShowBuySelf(value);
     }
     getProductInfo();
+    getAllTags();
   }, []);
+
+  async function getAllTags() {
+    const cartProducts = shopify.cart.current?.value?.lineItems || [];
+
+    // Fetch all products in parallel
+    const products = await Promise.all(
+      cartProducts.map(item =>
+        shopify.productSearch.fetchProductWithId(item.productId)
+      )
+    );
+
+    // Collect + normalize tags
+    const allTags = products
+      .flatMap(product => product?.tags || [])
+      .map(tag => tag.toLowerCase());
+
+    var qcGiftcardCount = allTags.join(',').split('qc_giftcard').length - 1;
+    var physicalQcGcCount = allTags.join(',').split('physical_qc_gc').length - 1;
+
+    if (physicalQcGcCount) {
+      if (qcGiftcardCount !== physicalQcGcCount) {
+        setRestrictCart("true");
+      }
+    }
+  }
 
   const isValid = () => {
     if (buySelf === "true" && isShowBuySelf === 'true') return true;
@@ -216,6 +252,14 @@ function Extension() {
     if (showDate === "true" && (!giftDate || !giftTime)) return false;
     return true;
   };
+
+  if(restrictCart == "true"){
+    return(
+      <s-page>
+        <s-text>You can't purchase both physical and digital gift products in the same cart. Please remove one of them.</s-text>
+      </s-page>
+    )
+  }
 
   return (
     <s-page heading="Gift Card Options">

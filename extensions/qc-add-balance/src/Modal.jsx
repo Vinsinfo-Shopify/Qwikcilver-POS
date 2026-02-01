@@ -1,7 +1,7 @@
 // @ts-nocheck
-import { render } from 'preact';
-import { useState, useEffect } from 'preact/hooks';
-import CryptoJS from "crypto-js";
+import { render } from "preact";
+import { useState, useEffect } from "preact/hooks";
+import { generateHashHeaders, getAPIEndpoint, scanUsingBarcode} from "../../global";
 
 export default () => {
   render(<Extension />, document.body);
@@ -11,37 +11,19 @@ const Extension = () => {
   const [customer, setCustomer] = useState(null);
   const [walletBalance, setWalletBalance] = useState("0");
   const [gCode, setGCode] = useState("");
+  const [barCode, setBarCode] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  const secretKey = "zyuief7tyzq0ic8";
-  const shopDomain = shopify.session.currentSession.shopDomain //"bonjovi-claimcode-prod-plus.myshopify.com";
+  const shopDomain = shopify.session.currentSession.shopDomain;
+  const APIEndpoint = getAPIEndpoint();
 
-  function generateHashHeaders(customerId) {
-    const now = new Date();
-    const rand1 = (now.getMilliseconds() % 9999) + 1000;
-    const rand2 = now.getMilliseconds();
-    const randomString = `${rand1}${rand2}`;
-    const timestamp = `${customerId}${randomString}${String(customerId).length}`;
-
-    const hashedTimestamp = CryptoJS.HmacSHA256(
-      `${customerId}${shopDomain}${randomString}`,
-      secretKey
-    ).toString();
-
-    return {
-      accept: "application/json",
-      "content-type": "application/json",
-      hash: hashedTimestamp,
-      timestamp,
-      "x-origin": shopDomain
-    };
-  }
+  let isBarCodeValue = false;
 
   async function fetchWalletBalance(customerId) {
     try {
-      const headers = generateHashHeaders(customerId);
+      const headers = await generateHashHeaders(customerId, shopDomain);
       const response = await fetch(
-        `https://devftadashboard.qwikcilver.com/giftcard/wallet/balance?store=${shopDomain}&customer_id=${customerId}`,
+        `${APIEndpoint}/giftcard/wallet/balance?store=${shopDomain}&customer_id=${customerId}`,
         {
           method: "POST",
           headers,
@@ -57,17 +39,21 @@ const Extension = () => {
 
   async function addWalletBalance() {
     try {
-      const headers = generateHashHeaders(customer);
+      const headers = await generateHashHeaders(customer, shopDomain);
 
       const response = await fetch(
-        `https://devftadashboard.qwikcilver.com/giftcard/wallet/addgiftcard`,
+        `${APIEndpoint}/giftcard/wallet/addgiftcard`,
         {
           method: "POST",
           headers,
           body: JSON.stringify({
             store: shopDomain,
             customer_id: customer,
-            gc_pin: gCode
+            ...(isNaN(gCode) ? 
+            { gc_pin: gCode } : 
+            { gc_number: gCode,
+              TrackData: barCode
+             })
           })
         }
       );
@@ -76,18 +62,15 @@ const Extension = () => {
 
       if (!data?.success) {
         shopify.toast.show(data?.message || "Invalid Code!");
-        return data;
+        return;
       }
 
       const balance = await fetchWalletBalance(customer);
       setWalletBalance(balance?.data?.balance || 0);
-      setGCode('');
+      setGCode("");
       shopify.toast.show("Added!");
-      return data;
-
     } catch {
       shopify.toast.show("Invalid Code!");
-      return null;
     }
   }
 
@@ -95,26 +78,36 @@ const Extension = () => {
     const loadBalance = async () => {
       setIsLoading(true);
       const cart = shopify?.cart?.current?.value;
-      if (cart?.customer?.id) {
-        // setCustomer(cart.customer.id);
+
+      if (cart.customer.id) {
         setCustomer(cart.customer.id);
         const balance = await fetchWalletBalance(cart.customer.id);
-        await setWalletBalance(balance?.data?.balance || 0);
+        setWalletBalance(balance?.data?.balance || 0);
       }
+
       setIsLoading(false);
     };
+
     loadBalance();
   }, []);
 
+    useEffect(() => {
+    let value = scanUsingBarcode(gCode);
+
+    if(gCode.length === 26 || gCode.length === 31 || gCode.length === 32){
+      setBarCode(gCode);
+      setGCode(value);
+    };
+  }, [gCode]);
+
   return (
     <s-box padding="small">
-      {/* <s-text>{customer}</s-text> */}
       {customer ? (
         <>
-          <s-text>Your Wallet Balance is {walletBalance}</s-text>
+          <s-text>Your Wallet Balance is {getCurrencySymbol(shopify.session.currentSession.currency)} {walletBalance}</s-text>
           <s-divider />
           <s-text-field
-            placeholder="Enter Pin"
+            placeholder="Enter Pin / Scan barcode / Swipe card"
             value={gCode}
             onInput={(e) => setGCode(e.target.value)}
           />

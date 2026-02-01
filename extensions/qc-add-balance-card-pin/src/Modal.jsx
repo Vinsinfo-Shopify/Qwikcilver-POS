@@ -1,7 +1,12 @@
 // @ts-nocheck
-import { render } from 'preact';
-import { useState, useEffect } from 'preact/hooks';
-import CryptoJS from "crypto-js";
+import { render } from "preact";
+import { useState, useEffect } from "preact/hooks";
+import {
+  generateHashHeaders,
+  getAPIEndpoint,
+  scanUsingBarcode,
+  getCurrencySymbol
+} from "../../global";
 
 export default () => {
   render(<Extension />, document.body);
@@ -13,108 +18,116 @@ const Extension = () => {
   const [gNumber, setGNumber] = useState("");
   const [gPin, setGPin] = useState("");
 
-  const secretKey = "zyuief7tyzq0ic8";
-  const shopDomain = shopify.session.currentSession.shopDomain //"bonjovi-claimcode-prod-plus.myshopify.com";
+  const shopDomain = shopify.session.currentSession.shopDomain;
+  const APIEndpoint = getAPIEndpoint();
 
-  function generateHashHeaders(customerId) {
-    const now = new Date();
-    const rand1 = (now.getMilliseconds() % 9999) + 1000;
-    const rand2 = now.getMilliseconds();
-    const randomString = `${rand1}${rand2}`;
-    const timestamp = `${customerId}${randomString}${String(customerId).length}`;
-    const hashedTimestamp = CryptoJS.HmacSHA256(
-      `${customerId}${shopDomain}${randomString}`,
-      secretKey
-    ).toString();
+  /* -------------------- API HELPERS -------------------- */
 
-    return {
-      accept: "application/json",
-      "content-type": "application/json",
-      hash: hashedTimestamp,
-      timestamp,
-      "x-origin": shopDomain
-    };
-  }
-
-  async function fetchWalletBalance(customerId) {
+  const fetchWalletBalance = async (customerId) => {
     try {
-      const headers = generateHashHeaders(customerId);
-      const response = await fetch(
-        `https://devftadashboard.qwikcilver.com/giftcard/wallet/balance?store=${shopDomain}&customer_id=${customerId}`,
+      const headers = generateHashHeaders(customerId, shopDomain);
+      const res = await fetch(
+        `${APIEndpoint}/giftcard/wallet/balance?store=${shopDomain}&customer_id=${customerId}`,
         {
           method: "POST",
           headers,
           body: JSON.stringify({ store: shopDomain })
         }
       );
-      return await response.json();
-    } catch {
+      return await res.json();
+    } catch (err) {
       return null;
     }
-  }
+  };
 
-  async function addWalletBalance() {
+  const addWalletBalance = async () => {
     try {
-      const headers = generateHashHeaders(customer);
-      const response = await fetch(
-        `https://devftadashboard.qwikcilver.com/giftcard/wallet/addgiftcard`,
+      const headers = generateHashHeaders(customer, shopDomain);
+
+      const payload =
+        gNumber.length === 26 || gNumber.length === 31 || gNumber.length === 32
+          ? { TrackData: gNumber, gc_number: gPin }
+          : { gc_number: gNumber, gc_pin: gPin };
+
+      const res = await fetch(
+        `${APIEndpoint}/giftcard/wallet/addgiftcard`,
         {
           method: "POST",
           headers,
           body: JSON.stringify({
             store: shopDomain,
             customer_id: customer,
-            gc_pin: gPin,
-            gc_number: gNumber
+            ...payload
           })
         }
       );
 
-      const data = await response.json();
+      const data = await res.json();
 
       if (!data?.success) {
         shopify.toast.show(data?.message || "Invalid Code!");
-        return data;
+        return;
       }
 
-      const balanceData = await fetchWalletBalance(customer);
-      setWalletBalance(balanceData?.data?.balance || 0);
+      const balanceRes = await fetchWalletBalance(customer);
+      setWalletBalance(balanceRes?.data?.balance || 0);
 
       setGNumber("");
       setGPin("");
 
       shopify.toast.show("Added!");
-      return data;
-
-    } catch {
+    } catch (err) {
       shopify.toast.show("Invalid Code!");
-      return null;
-    }
-  }
-
-useEffect(() => {
-  const load = async () => {
-    const cart = shopify?.cart?.current?.value;
-    if (cart?.customer?.id) {
-      setCustomer(cart.customer.id);
-      const balance = await fetchWalletBalance(cart.customer.id);
-      setWalletBalance(balance?.data?.balance || 0);
     }
   };
 
-  load();
-}, []);
+  /* -------------------- INIT CUSTOMER -------------------- */
 
+  useEffect(() => {
+    const init = async () => {
+      const cart = shopify?.cart?.current?.value;
+      const customerId = cart?.customer?.id;
+
+      if (!customerId) return;
+
+      setCustomer(customerId);
+
+      const balanceRes = await fetchWalletBalance(customerId);
+      setWalletBalance(balanceRes?.data?.balance || 0);
+    };
+
+    init();
+  }, []);
+
+  /* -------------------- BARCODE AUTO PIN -------------------- */
+
+  useEffect(() => {
+    if (!gNumber) return;
+
+    const pin = scanUsingBarcode(gNumber);
+    if (pin) {
+      setGPin(pin);
+    }
+  }, [gNumber]);
+
+  /* -------------------- UI -------------------- */
 
   return (
     <s-box padding="small">
       {customer ? (
         <>
-          <s-text>Your Wallet Balance is {walletBalance}</s-text>
-          <s-divider />
+          <s-text>
+            Your Wallet Balance is{" "}
+            {getCurrencySymbol(
+              shopify.session.currentSession.currency
+            )}{" "}
+            {walletBalance}
+          </s-text>
+
+          <s-divider /> 
 
           <s-text-field
-            placeholder="Enter Card Number"
+            placeholder="Enter Card Number / Scan barcode / Swipe card"
             value={gNumber}
             onInput={(e) => setGNumber(e.target.value)}
             required
