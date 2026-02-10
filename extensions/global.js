@@ -75,7 +75,7 @@ export function getCurrencySymbol(code) {
 };
 
 export function scanUsingBarcode(code) {
-    if (typeof code !== 'string') return '';
+    // if (typeof code !== 'string') return '';
 
     // Case 1: contains ; = ?
     if (code.includes(';') && code.includes('=') && code.includes('?')) {
@@ -112,3 +112,4 @@ export function scanUsingBarcode(code) {
 
     return '';
 }
+

@@ -112,8 +112,47 @@ const Extension = () => {
   const [deleteGiftCard, setDeleteGiftCard] = useState("no");
   const [isLoadingTags, setIsLoadingTags] = useState(true);
 
-  const hasAppliedCode = Boolean(giftCode);
+  var hasAppliedCode = Boolean(giftCode);
   const isCartEmpty = lineItems.length === 0;
+
+  const BASE_URL = 'https://unstriped-unimportuned-campbell.ngrok-free.dev';
+
+  async function capturePosGc(shop, customerId, giftCardCode) {
+    const response = await fetch(`${BASE_URL}/giftcard/capturePosGc`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shop, customerId, giftCardCode })
+    });
+
+    const data = await response.json();
+    return data.success;
+  }
+
+  async function getPosGc(shop, customerId) {
+    const response = await fetch(`${BASE_URL}/giftcard/getPosGc`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shop, customerId })
+    });
+
+    const data = await response.json();
+    if (data.giftCardCode) {
+      setGiftCode(data.giftCardCode);
+      shopify.toast.show("Copy the existing gift card code!");
+    }
+    return data;
+  }
+
+  async function cancelPosGc(shop, customerId) {
+    const response = await fetch(`${BASE_URL}/giftcard/cancelPosGc`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shop, customerId })
+    });
+
+      const data = await response.json();
+      return data.success;
+  }
 
   const refreshBalance = useCallback(async (cid) => {
     if (cid) {
@@ -121,6 +160,7 @@ const Extension = () => {
       setWalletBalance(bal);
     }
   }, []);
+
 
   useEffect(() => {
     const init = async () => {
@@ -148,7 +188,7 @@ const Extension = () => {
       const cid = cart?.customer?.id;
       setCustomer(cid);
       refreshBalance(cid);
-
+      getPosGc(shopDomain, cid);
       try {
         setIsLoadingTags(true);
         const pIds = items.map((i) => i.productId || i.id).filter(Boolean);
@@ -190,6 +230,7 @@ const Extension = () => {
         setGiftCode(code);
         setAppliedAmount(amount);
         refreshBalance(customer);
+        capturePosGc(shopDomain, customer, code);
         shopify.toast.show("Gift card code generated!");
       } else {
         shopify.toast.show("Failed to generate gift card code.");
@@ -205,11 +246,12 @@ const Extension = () => {
       const res = await api.cancelWallet(customer);
       if (res) {
         if (res?.success) {
-        shopify.toast.show("Gift card removed");
-        setGiftCode("");
-        setAppliedAmount(0);
-        setDeleteGiftCard("no");
-        refreshBalance(customer);
+          shopify.toast.show("Gift card removed");
+          setGiftCode("");
+          setAppliedAmount(0);
+          setDeleteGiftCard("no");
+          refreshBalance(customer);
+          cancelPosGc(shopDomain, customer);
         }else{
           if (res.key == 'noActiveSession') {
             shopify.toast.show('No active session found!');
@@ -269,7 +311,7 @@ const Extension = () => {
 
         {!hasAppliedCode && (
           <s-box padding="small">
-            <s-text>Need to cancel the added gift card??</s-text>
+            <s-text>Need to cancel the added gift card?</s-text>
             <s-choice-list
               values={[deleteGiftCard]}
               onChange={(e) => setDeleteGiftCard(e.target.values[0])}

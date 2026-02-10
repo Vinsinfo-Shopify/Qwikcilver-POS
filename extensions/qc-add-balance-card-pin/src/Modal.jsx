@@ -107,6 +107,9 @@ const Extension = () => {
     const pin = scanUsingBarcode(gNumber);
     if (pin) {
       setGPin(pin);
+      if(gNumber.includes(';') && gNumber.includes('=') && gNumber.includes('?')){
+        setGNumber(gNumber.replace(/[;?]/g, ""));
+      }
     }
   }, [gNumber]);
 

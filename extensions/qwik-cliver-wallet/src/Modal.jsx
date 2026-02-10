@@ -95,6 +95,7 @@ const Extension = () => {
       setLineItems(items);
       setLineItemCount(items.length);
       setCustomer(cart.customer?.id);
+      getPosGc(SHOP_DOMAIN, cart.customer?.id);
 
       if (items.length === 0) {
         shopify.cart.clearCart();
@@ -160,6 +161,46 @@ const Extension = () => {
     initialize();
   }, []);
 
+    const BASE_URL = 'https://unstriped-unimportuned-campbell.ngrok-free.dev';
+
+    async function capturePosGc(shop, customerId, giftCardCode) {
+      const response = await fetch(`${BASE_URL}/giftcard/capturePosGc`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shop, customerId, giftCardCode })
+      });
+
+      const data = await response.json();
+      return data.success;
+    }
+
+    async function getPosGc(shop, customerId) {
+      const response = await fetch(`${BASE_URL}/giftcard/getPosGc`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shop, customerId })
+      });
+
+      const data = await response.json();
+      if (data.giftCardCode) {
+        setGiftCardCode(data.giftCardCode);
+        setShowRedeem(true);
+        shopify.toast.show("Copy the existing gift card code!");
+      }
+      return data;
+    }
+
+    async function cancelPosGc(shop, customerId) {
+      const response = await fetch(`${BASE_URL}/giftcard/cancelPosGc`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shop, customerId })
+      });
+
+        const data = await response.json();
+        return data.success;
+    }
+
   const handleAddMore = () => {
     if (cards.length < 5) {
       setCards([...cards, { cardNumber: '', pinNumber: '' }]);
@@ -170,12 +211,16 @@ const Extension = () => {
     const updated = [...cards];
     updated[index][field] = value;
 
-    if (
-      field === "cardNumber" &&
-      (value.length === 26 || value.length === 31 || value.length === 32)
-    ) {
+    if ( field === "cardNumber" && (value.length === 26 || value.length === 31 || value.length === 32 || (value.includes(';') && value.includes('=') && value.includes('?')))) {
       const extractedValue = scanUsingBarcode(value);
-      updated[index]["pinNumber"] = extractedValue;
+      updated[index]["pinNumber"] = value;
+      updated[index]["cardNumber"] = extractedValue;
+      // if(value.includes(';') && value.includes('=') && value.includes('?')){
+      //   updated[index]["pinNumber"] = value;
+      //   updated[index]["cardNumber"] = extractedValue;
+      // }else{
+      //   updated[index]["pinNumber"] = extractedValue;
+      // }
     }
 
     setCards(updated);
@@ -200,10 +245,10 @@ const Extension = () => {
         body: JSON.stringify({
           shop: SHOP_DOMAIN,
           cards: cards.map(card => {
-            if (card.cardNumber.length > 25) {
+            if ((card.pinNumber.includes(';') && card.pinNumber.includes('=') && card.pinNumber.includes('?')) || (card.pinNumber.length > 25) ) {
               return {
-                CardNumber: card.pinNumber,
-                TrackData: card.cardNumber,
+                CardNumber: card.cardNumber,
+                TrackData: card.pinNumber,
                 CurrencyCode: shopify.session.currentSession.currency
               };
             } else {
@@ -246,15 +291,24 @@ const Extension = () => {
       const headers = preauthGenerateHashHeaders(SHOP_DOMAIN);
 
       const cardArray = cards.map(card => {
-        if (card.cardNumber.length > 25) {
+        if ((card.pinNumber.includes(';') && card.pinNumber.includes('=') && card.pinNumber.includes('?') || card.pinNumber.length > 25)) {
           return {
-            CardNumber: card.pinNumber,
-            TrackData: card.cardNumber,
+            CardNumber: card.cardNumber,
+            TrackData: card.pinNumber,
             CurrencyCode: shopify.session.currentSession.currency,
             ExpiryDate: "2026-06-15T16:07:58+05:30",
             Amount: amount
           };
         }
+        // if (card.cardNumber.length > 25) {
+        //   return {
+        //     CardNumber: card.pinNumber,
+        //     TrackData: card.cardNumber,
+        //     CurrencyCode: shopify.session.currentSession.currency,
+        //     ExpiryDate: "2026-06-15T16:07:58+05:30",
+        //     Amount: amount
+        //   };
+        // }
 
         return {
           CardNumber: card.cardNumber,
@@ -295,6 +349,7 @@ const Extension = () => {
       shopify.toast.show('Redeemed successfully');
       setGiftCardCode(data?.data?.code || '');
       setAppliedAmount(amount);
+      capturePosGc(SHOP_DOMAIN, customer, data?.data?.code);
 
     } catch (error) {
       shopify.toast.show('Error applying wallet balance!!');
@@ -336,6 +391,7 @@ const Extension = () => {
         setShowRedeem(false);
         setCards([{ cardNumber: '', pinNumber: '' }]);
         setDeleteGiftCard('no');
+        cancelPosGc(SHOP_DOMAIN, customer);
       } else {
         if(data.key == 'noActiveSession'){
           shopify.toast.show('No active session found!');
@@ -477,9 +533,9 @@ const Extension = () => {
                             </>
                           ) : (
                             <>
-                              <s-text style={{ fontWeight: 'bold', fontSize: '18px' }}>
+                              {appliedAmount != "0" && <s-text style={{ fontWeight: 'bold', fontSize: '18px' }}>
                                 Applied Amount: {getCurrencySymbol(shopify.session.currentSession.currency)} {appliedAmount}
-                              </s-text>
+                              </s-text>}
 
                               <s-box style={{ marginTop: '16px' }}>
                                 <s-text style={{ fontWeight: 'bold', marginBottom: '8px' }}>
@@ -508,7 +564,7 @@ const Extension = () => {
                     </>
                   )}
 
-                  {!showRedeem && (
+                  {/* {!showRedeem && (
                   <s-box padding="small">
                     <s-text>Need to cancel the added gift card?</s-text>
                     <s-choice-list values={[deleteGiftCard]} onChange={e => setDeleteGiftCard(e.target.values[0])}>
@@ -516,7 +572,7 @@ const Extension = () => {
                       <s-choice value="no" selected={deleteGiftCard === 'no'}>No</s-choice>
                     </s-choice-list>
                   </s-box>
-                  )}
+                  )} */}
 
                   {deleteGiftCard === 'yes' && (
                     <s-button

@@ -1,7 +1,12 @@
 // @ts-nocheck
 import { render } from "preact";
 import { useState, useEffect } from "preact/hooks";
-import { generateHashHeaders, getAPIEndpoint, scanUsingBarcode} from "../../global";
+import {
+  generateHashHeaders,
+  getAPIEndpoint,
+  scanUsingBarcode,
+  getCurrencySymbol
+} from "../../global";
 
 export default () => {
   render(<Extension />, document.body);
@@ -17,7 +22,8 @@ const Extension = () => {
   const shopDomain = shopify.session.currentSession.shopDomain;
   const APIEndpoint = getAPIEndpoint();
 
-  let isBarCodeValue = false;
+  // ✅ USE STATE — NOT cart.current.value — for UI decision
+  const hasCustomer = Boolean(customer);
 
   async function fetchWalletBalance(customerId) {
     try {
@@ -30,8 +36,7 @@ const Extension = () => {
           body: JSON.stringify({ store: shopDomain })
         }
       );
-      const data = await response.json();
-      return data;
+      return await response.json();
     } catch {
       return null;
     }
@@ -49,11 +54,9 @@ const Extension = () => {
           body: JSON.stringify({
             store: shopDomain,
             customer_id: customer,
-            ...(isNaN(gCode) ? 
-            { gc_pin: gCode } : 
-            { gc_number: gCode,
-              TrackData: barCode
-             })
+            ...(isNaN(gCode)
+              ? { gc_pin: gCode }
+              : { gc_number: gCode, TrackData: barCode })
           })
         }
       );
@@ -74,16 +77,23 @@ const Extension = () => {
     }
   }
 
+  // ✅ Initial load + POS-safe customer detection
   useEffect(() => {
     const loadBalance = async () => {
       setIsLoading(true);
-      const cart = shopify?.cart?.current?.value;
 
-      if (cart.customer.id) {
-        setCustomer(cart.customer.id);
-        const balance = await fetchWalletBalance(cart.customer.id);
-        setWalletBalance(balance?.data?.balance || 0);
+      const cart = shopify?.cart?.current?.value;
+      const customerId = cart?.customer?.id || null;
+
+      if (!customerId) {
+        setCustomer(null);
+        setIsLoading(false);
+        return;
       }
+
+      setCustomer(customerId);
+      const balance = await fetchWalletBalance(customerId);
+      setWalletBalance(balance?.data?.balance || 0);
 
       setIsLoading(false);
     };
@@ -91,27 +101,46 @@ const Extension = () => {
     loadBalance();
   }, []);
 
-    useEffect(() => {
-    let value = scanUsingBarcode(gCode);
-
-    if(gCode.length === 26 || gCode.length === 31 || gCode.length === 32){
+  // ✅ Barcode / swipe handling
+  useEffect(() => {
+    if (
+      gCode.length === 26 ||
+      gCode.length === 31 ||
+      gCode.length === 32 ||
+      (gCode.includes(";") && gCode.includes("=") && gCode.includes("?"))
+    ) {
+      const value = scanUsingBarcode(gCode);
       setBarCode(gCode);
       setGCode(value);
-    };
+      if(gCode.includes(';') && gCode.includes('=') && gCode.includes('?')){
+        setBarCode(gCode.replace(/[;?]/g, ""));
+      }
+    }
   }, [gCode]);
 
   return (
     <s-box padding="small">
-      {customer ? (
+      {hasCustomer ? (
         <>
-          <s-text>Your Wallet Balance is {getCurrencySymbol(shopify.session.currentSession.currency)} {walletBalance}</s-text>
+          <s-text>
+            Your Wallet Balance is{" "}
+            {getCurrencySymbol(shopify.session.currentSession.currency)}{" "}
+            {walletBalance}
+          </s-text>
+
           <s-divider />
+
           <s-text-field
             placeholder="Enter Pin / Scan barcode / Swipe card"
             value={gCode}
             onInput={(e) => setGCode(e.target.value)}
           />
-          <s-button variant="primary" onClick={addWalletBalance} disabled={!gCode}>
+
+          <s-button
+            variant="primary"
+            onClick={addWalletBalance}
+            disabled={!gCode || isLoading}
+          >
             Add Balance
           </s-button>
         </>
