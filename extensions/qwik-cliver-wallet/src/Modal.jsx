@@ -1,7 +1,63 @@
 // @ts-nocheck
 import { render } from 'preact';
 import { useState, useEffect } from 'preact/hooks';
-import CryptoJS from 'crypto-js';
+import { generateHashHeaders, preauthGenerateHashHeaders, getCurrencySymbol, scanUsingBarcode, getAPIEndpoint } from "../../global";
+
+const GRAPHQL_BATCH_SIZE = 250; // Shopify GraphQL nodes query limit
+
+async function queryProductsBatch(productIds) {
+  if (!productIds || productIds.length === 0) return null;
+
+  const requestBody = {
+    query: `#graphql
+      query GetProducts($ids: [ID!]!) {
+        nodes(ids: $ids) {
+          ... on Product {
+            id
+            title
+            tags
+          }
+        }
+      }
+    `,
+    variables: { 
+      ids: productIds.map(id => `gid://shopify/Product/${id}`)
+    },
+  };
+
+  const res = await fetch('shopify:admin/api/graphql.json', {
+    method: 'POST',
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!res.ok) {
+    throw new Error(`GraphQL request failed: ${res.status}`);
+  }
+
+  return res.json();
+}
+
+
+async function fetchAllProductTags(productIds) {
+  const allProducts = [];
+  
+  // Split into batches of 250 (Shopify limit)
+  for (let i = 0; i < productIds.length; i += GRAPHQL_BATCH_SIZE) {
+    const batch = productIds.slice(i, i + GRAPHQL_BATCH_SIZE);
+    const batchNum = Math.floor(i / GRAPHQL_BATCH_SIZE) + 1;
+    const totalBatches = Math.ceil(productIds.length / GRAPHQL_BATCH_SIZE);
+    
+    console.log(`Fetching batch ${batchNum}/${totalBatches}: ${batch.length} products`);
+    
+    const result = await queryProductsBatch(batch);
+    
+    if (result?.data?.nodes) {
+      allProducts.push(...result.data.nodes.filter(Boolean));
+    }
+  }
+  
+  return allProducts;
+}
 
 export default async () => {
   render(<Extension />, document.body);
@@ -20,27 +76,130 @@ const Extension = () => {
   const [appliedAmount, setAppliedAmount] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [deleteGiftCard, setDeleteGiftCard] = useState('no');
+  const [isLoadingTags, setIsLoadingTags] = useState(true);
+  const [productTags, setProductTags] = useState([]);
 
-  const SECRET_KEY = 'zyuief7tyzq0ic8';
-  const API_BASE_URL = 'https://devftadashboard.qwikcilver.com';
-  const SHOP_DOMAIN = shopify?.session?.currentSession?.shopDomain;  //shopify?.session?.currentSession?.shopDomain;
+  const API_BASE_URL = getAPIEndpoint();
+  const SHOP_DOMAIN = shopify?.session?.currentSession?.shopDomain;
 
   useEffect(() => {
-    const cart = shopify.cart.current?.value;
-    if (cart?.lineItems) {
-      setLineItems(cart.lineItems);
-      setLineItemCount(cart.lineItems.length);
-      setCustomer(cart.customer.id);
-      if (cart.lineItems.length === 0) {
-        shopify.cart.clearCart();
+    const initialize = async () => {
+      const cart = shopify.cart.current?.value;
+      
+      if (!cart?.lineItems) {
+        setIsLoadingTags(false);
+        return;
       }
 
-      const giftExists = cart.lineItems.some(
+      const items = cart.lineItems;
+      setLineItems(items);
+      setLineItemCount(items.length);
+      setCustomer(cart.customer?.id);
+      getPosGc(SHOP_DOMAIN, cart.customer?.id);
+
+      if (items.length === 0) {
+        shopify.cart.clearCart();
+        setIsLoadingTags(false);
+        return;
+      }
+
+      // Check for gift product based on properties
+      const giftExists = items.some(
         item => item.properties && item.properties['Buy for Self']
       );
-      setHasGiftProduct(giftExists);
-    }
+
+      // Fetch product tags with batching support
+      try {
+        setIsLoadingTags(true);
+        console.log('=== Fetching Product Tags ===');
+        
+        const productIds = items
+          .map(item => item.productId || item.id)
+          .filter(Boolean);
+        
+        if (productIds.length === 0) {
+          setHasGiftProduct(giftExists)
+          
+          setIsLoadingTags(false);
+          return;
+        }
+
+        console.log(`Total products: ${productIds.length}`);
+        
+        const products = await fetchAllProductTags(productIds);
+        
+        const allTags = [];
+        let hasQcGiftCard = false;
+        
+        products.forEach((product) => {
+          if (product?.tags) {
+            allTags.push({
+              productId: product.id,
+              productTitle: product.title || 'Unknown Product',
+              tags: product.tags
+            });
+            
+            // Check for qc_giftcard tag
+            if (product.tags.includes('qc_giftcard')) {
+              hasQcGiftCard = true;
+            }
+          }
+        });
+        
+        setProductTags(allTags);
+        // Set hasGiftProduct to true if either property exists OR qc_giftcard tag is found
+        setHasGiftProduct(giftExists || hasQcGiftCard);
+
+      } catch (error) {
+        console.error('Error fetching product tags:', error);
+        setHasGiftProduct(giftExists);
+      } finally {
+        setIsLoadingTags(false);
+      }
+    };
+
+    initialize();
   }, []);
+
+    const BASE_URL = 'https://unstriped-unimportuned-campbell.ngrok-free.dev';
+
+    async function capturePosGc(shop, customerId, giftCardCode) {
+      const response = await fetch(`${BASE_URL}/giftcard/capturePosGc`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shop, customerId, giftCardCode })
+      });
+
+      const data = await response.json();
+      return data.success;
+    }
+
+    async function getPosGc(shop, customerId) {
+      const response = await fetch(`${BASE_URL}/giftcard/getPosGc`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shop, customerId })
+      });
+
+      const data = await response.json();
+      if (data.giftCardCode) {
+        setGiftCardCode(data.giftCardCode);
+        setShowRedeem(true);
+        shopify.toast.show("Copy the existing gift card code!");
+      }
+      return data;
+    }
+
+    async function cancelPosGc(shop, customerId) {
+      const response = await fetch(`${BASE_URL}/giftcard/cancelPosGc`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shop, customerId })
+      });
+
+        const data = await response.json();
+        return data.success;
+    }
 
   const handleAddMore = () => {
     if (cards.length < 5) {
@@ -51,8 +210,22 @@ const Extension = () => {
   const handleCardChange = (index, field, value) => {
     const updated = [...cards];
     updated[index][field] = value;
+
+    if ( field === "cardNumber" && (value.length === 26 || value.length === 31 || value.length === 32 || (value.includes(';') && value.includes('=') && value.includes('?')))) {
+      const extractedValue = scanUsingBarcode(value);
+      updated[index]["pinNumber"] = value;
+      updated[index]["cardNumber"] = extractedValue;
+      // if(value.includes(';') && value.includes('=') && value.includes('?')){
+      //   updated[index]["pinNumber"] = value;
+      //   updated[index]["cardNumber"] = extractedValue;
+      // }else{
+      //   updated[index]["pinNumber"] = extractedValue;
+      // }
+    }
+
     setCards(updated);
   };
+
 
   const handleRemoveCard = index => {
     if (cards.length > 1) {
@@ -60,43 +233,32 @@ const Extension = () => {
     }
   };
 
-  const generateHashHeaders = () => {
-    const now = new Date();
-    const rand1 = (now.getMilliseconds() % 9999) + 1000;
-    const rand2 = now.getMilliseconds();
-    const randomString = `${rand1}${rand2}`;
-
-    const timestamp = `${randomString}00`;
-
-    const hashedTimestamp = CryptoJS.HmacSHA256(
-      `00${SHOP_DOMAIN}${randomString}`,
-      SECRET_KEY
-    ).toString();
-
-    return {
-      "accept": "application/json",
-      "content-type": "application/json",
-      "hash": hashedTimestamp,
-      "timestamp": timestamp,
-      "x-origin": SHOP_DOMAIN
-    };
-  };
 
   const validation = async () => {
     setIsLoading(true);
     try {
-      const headers = await generateHashHeaders();
+      const headers = await generateHashHeaders(customer, SHOP_DOMAIN);
 
       const response = await fetch(`${API_BASE_URL}/preauth/validate`, {
         method: 'POST',
         headers,
         body: JSON.stringify({
           shop: SHOP_DOMAIN,
-          cards: cards.map(card => ({
-            CardNumber: card.cardNumber,
-            CardPin: card.pinNumber,
-            CurrencyCode: 'INR'
-          }))
+          cards: cards.map(card => {
+            if ((card.pinNumber.includes(';') && card.pinNumber.includes('=') && card.pinNumber.includes('?')) || (card.pinNumber.length > 25) ) {
+              return {
+                CardNumber: card.cardNumber,
+                TrackData: card.pinNumber,
+                CurrencyCode: shopify.session.currentSession.currency
+              };
+            } else {
+              return {
+                CardNumber: card.cardNumber,
+                CardPin: card.pinNumber,
+                CurrencyCode: shopify.session.currentSession.currency
+              };
+            }
+          })
         })
       });
 
@@ -126,18 +288,36 @@ const Extension = () => {
 
     setIsLoading(true);
     try {
-      // Fix: Pass the required parameters to generateHashHeaders
-      const headers = generateHashHeaders();
+      const headers = preauthGenerateHashHeaders(SHOP_DOMAIN);
 
+      const cardArray = cards.map(card => {
+        if ((card.pinNumber.includes(';') && card.pinNumber.includes('=') && card.pinNumber.includes('?') || card.pinNumber.length > 25)) {
+          return {
+            CardNumber: card.cardNumber,
+            TrackData: card.pinNumber,
+            CurrencyCode: shopify.session.currentSession.currency,
+            ExpiryDate: "2026-06-15T16:07:58+05:30",
+            Amount: amount
+          };
+        }
+        // if (card.cardNumber.length > 25) {
+        //   return {
+        //     CardNumber: card.pinNumber,
+        //     TrackData: card.cardNumber,
+        //     CurrencyCode: shopify.session.currentSession.currency,
+        //     ExpiryDate: "2026-06-15T16:07:58+05:30",
+        //     Amount: amount
+        //   };
+        // }
 
-      const cardArray = cards.map(card => ({
-        CardNumber: card.cardNumber,
-        CardPin: card.pinNumber,
-        CurrencyCode: 'INR',
-        ExpiryDate: "2026-06-15T16:07:58+05:30",
-        Amount: amount
-      }));
-
+        return {
+          CardNumber: card.cardNumber,
+          CardPin: card.pinNumber,
+          CurrencyCode: shopify.session.currentSession.currency,
+          ExpiryDate: "2026-06-15T16:07:58+05:30",
+          Amount: amount
+        };
+      });
 
       const response = await fetch(`${API_BASE_URL}/preauth/preauth`, {
         method: 'POST',
@@ -153,47 +333,43 @@ const Extension = () => {
       const data = await response.json();
 
       if (!data?.success) {
-        shopify.toast.show('Redeem failed', data);
+        if(data.key == 'balanceAlreadyApplied'){
+            shopify.toast.show('Your gift card balance has already been applied, kindly retry after 30 minutes to apply a new redemption amount');
+        } 
+
+        if(data.key == 'internalServerError'){
+            shopify.toast.show('Redeem failed');
+        }
+        
         console.error('Redeem failed:', data);
+        backButton();
         return;
       }
 
       shopify.toast.show('Redeemed successfully');
       setGiftCardCode(data?.data?.code || '');
       setAppliedAmount(amount);
+      capturePosGc(SHOP_DOMAIN, customer, data?.data?.code);
 
     } catch (error) {
-      shopify.toast.show('Error applying wallet balance');
+      shopify.toast.show('Error applying wallet balance!!');
       console.error('Redeem error:', error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  function generateHashHeader(customerId) {
-    const now = new Date();
-    const rand1 = (now.getMilliseconds() % 9999) + 1000;
-    const rand2 = now.getMilliseconds();
-    const randomString = `${rand1}${rand2}`;
-    const timestamp = `${customerId}${randomString}${String(customerId).length}`;
-    const hashedTimestamp = CryptoJS.HmacSHA256(
-      `${customerId}${SHOP_DOMAIN}${randomString}`,
-      secretKey
-    ).toString();
-
-    return {
-      accept: "application/json",
-      "content-type": "application/json",
-      hash: hashedTimestamp,
-      timestamp,
-      "x-origin": SHOP_DOMAIN
-    };
+  const backButton = async () => {
+      setShowRedeem(false); 
+      setRedeemAmount('');
+      setAppliedAmount(0);
+      setGiftCardCode('');
   }
 
   const handleCancel = async () => {
     setIsLoading(true);
     try {
-      const headers = generateHashHeaders();
+      const headers = generateHashHeaders(customer, SHOP_DOMAIN);
       let custId = customer.toString();
       const response = await fetch(`${API_BASE_URL}/preauth/cancel`, {
         method: 'POST',
@@ -214,8 +390,14 @@ const Extension = () => {
         setRedeemAmount('');
         setShowRedeem(false);
         setCards([{ cardNumber: '', pinNumber: '' }]);
+        setDeleteGiftCard('no');
+        cancelPosGc(SHOP_DOMAIN, customer);
       } else {
-        shopify.toast.show('Failed to cancel');
+        if(data.key == 'noActiveSession'){
+          shopify.toast.show('No active session found!');
+        }else{
+          shopify.toast.show('Failed to cancel');
+        }
       }
     } catch (error) {
       shopify.toast.show('Error canceling wallet application');
@@ -234,11 +416,15 @@ const Extension = () => {
     await validation();
   };
 
+
   return (
     <s-scroll-box>
+
       <s-box padding="small">
         {lineItemCount !== 0 ? (
-          customer ? (
+          isLoadingTags ? (
+            <s-text>Loading product information...</s-text>
+          ) : customer ? (
             <>
               {hasGiftProduct ? (
                 <s-text>
@@ -265,7 +451,7 @@ const Extension = () => {
                               </s-text>
 
                               <s-text-field
-                                label="Card Number"
+                                label="Card Number / Scan barcode / Swipe card"
                                 value={card.cardNumber}
                                 onInput={e =>
                                   handleCardChange(index, 'cardNumber', e.target.value)
@@ -273,12 +459,23 @@ const Extension = () => {
                               />
 
                               <s-text-field
-                                label="PIN Number"
-                                value={card.pinNumber}
-                                onInput={e =>
-                                  handleCardChange(index, 'pinNumber', e.target.value)
-                                }
-                              />
+                                  label="PIN Number"
+                                  value={
+                                    card.pinNumber &&
+                                    (
+                                      (card.pinNumber.includes(';') &&
+                                      card.pinNumber.includes('=') &&
+                                      card.pinNumber.includes('?')) ||
+                                      card.pinNumber.length > 25
+                                    )
+                                      ? '*'.repeat(card.pinNumber.length)
+                                      : card.pinNumber
+                                  }
+                                  onInput={e =>
+                                    handleCardChange(index, 'pinNumber', e.target.value)
+                                  }
+                                />
+
 
                               {cards.length > 1 && (
                                 <s-button
@@ -316,14 +513,14 @@ const Extension = () => {
                           {!giftCardCode ? (
                             <>
                               <s-text style={{ fontWeight: 'bold', fontSize: '18px' }}>
-                                Available Balance: ₹{balance}
+                                Available Balance: {getCurrencySymbol(shopify.session.currentSession.currency)} {balance}
                               </s-text>
 
                               <s-text style={{ marginTop: '12px' }}>
                                 Enter amount you want to redeem
                               </s-text>
 
-                              <s-text-field
+                              <s-number-field
                                 placeholder="Enter amount"
                                 value={redeemAmount}
                                 onInput={e => setRedeemAmount(e.target.value)}
@@ -337,12 +534,19 @@ const Extension = () => {
                               >
                                 {isLoading ? 'Redeeming...' : 'Redeem Now'}
                               </s-button>
+
+                              <s-button
+                                style={{ marginTop: '16px' }}
+                                onClick={backButton}
+                              >
+                                Back
+                              </s-button>
                             </>
                           ) : (
                             <>
-                              <s-text style={{ fontWeight: 'bold', fontSize: '18px' }}>
-                                Applied Amount: ₹{appliedAmount}
-                              </s-text>
+                              {appliedAmount != "0" && <s-text style={{ fontWeight: 'bold', fontSize: '18px' }}>
+                                Applied Amount: {getCurrencySymbol(shopify.session.currentSession.currency)} {appliedAmount}
+                              </s-text>}
 
                               <s-box style={{ marginTop: '16px' }}>
                                 <s-text style={{ fontWeight: 'bold', marginBottom: '8px' }}>
@@ -371,15 +575,15 @@ const Extension = () => {
                     </>
                   )}
 
-                  {!showRedeem && (
+                  {/* {!showRedeem && (
                   <s-box padding="small">
-                    <s-text>Need to cancel the created gift card?</s-text>
+                    <s-text>Need to cancel the added gift card?</s-text>
                     <s-choice-list values={[deleteGiftCard]} onChange={e => setDeleteGiftCard(e.target.values[0])}>
                       <s-choice value="yes" selected={deleteGiftCard === 'yes'}>Yes</s-choice>
                       <s-choice value="no" selected={deleteGiftCard === 'no'}>No</s-choice>
                     </s-choice-list>
                   </s-box>
-                  )}
+                  )} */}
 
                   {deleteGiftCard === 'yes' && (
                     <s-button
