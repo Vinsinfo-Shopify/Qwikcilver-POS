@@ -107,8 +107,10 @@ const Extension = () => {
     const pin = scanUsingBarcode(gNumber);
     if (pin) {
       setGPin(pin);
-      if(gNumber.includes(';') && gNumber.includes('=') && gNumber.includes('?')){
-        setGNumber(gNumber.replace(/[;?]/g, ""));
+      if(gNumber.includes(';') && gNumber.includes('=') && gNumber.includes('?') || gNumber.length > 25){
+        // setGNumber(gNumber.replace(/[;?]/g, ""));
+        setGPin(gNumber);
+        setGNumber(pin);
       }
     }
   }, [gNumber]);
@@ -138,7 +140,13 @@ const Extension = () => {
 
           <s-text-field
             placeholder="Enter Pin Number"
-            value={gPin}
+            value={gPin && ((gPin.includes(';') &&
+              gPin.includes('=') &&
+              gPin.includes('?')) ||
+              gPin.length > 25
+            )
+              ? '*'.repeat(gPin.length)
+              : gPin}
             onInput={(e) => setGPin(e.target.value)}
             required
           />

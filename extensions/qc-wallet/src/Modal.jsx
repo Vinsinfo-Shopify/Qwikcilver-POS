@@ -100,6 +100,7 @@ const api = {
   }
 };
 
+
 const Extension = () => {
   const [customer, setCustomer] = useState(null);
   const [lineItems, setLineItems] = useState([]);
@@ -309,7 +310,7 @@ const Extension = () => {
           </>
         )}
 
-        {!hasAppliedCode && (
+        {/* {!hasAppliedCode && (
           <s-box padding="small">
             <s-text>Need to cancel the added gift card?</s-text>
             <s-choice-list
@@ -320,7 +321,7 @@ const Extension = () => {
               <s-choice value="no">No</s-choice>
             </s-choice-list>
           </s-box>
-        )}
+        )} */}
 
         {deleteGiftCard === "yes" && (
           <s-button

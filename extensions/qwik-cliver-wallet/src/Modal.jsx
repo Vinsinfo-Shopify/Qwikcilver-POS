@@ -459,12 +459,23 @@ const Extension = () => {
                               />
 
                               <s-text-field
-                                label="PIN Number"
-                                value={card.pinNumber}
-                                onInput={e =>
-                                  handleCardChange(index, 'pinNumber', e.target.value)
-                                }
-                              />
+                                  label="PIN Number"
+                                  value={
+                                    card.pinNumber &&
+                                    (
+                                      (card.pinNumber.includes(';') &&
+                                      card.pinNumber.includes('=') &&
+                                      card.pinNumber.includes('?')) ||
+                                      card.pinNumber.length > 25
+                                    )
+                                      ? '*'.repeat(card.pinNumber.length)
+                                      : card.pinNumber
+                                  }
+                                  onInput={e =>
+                                    handleCardChange(index, 'pinNumber', e.target.value)
+                                  }
+                                />
+
 
                               {cards.length > 1 && (
                                 <s-button
