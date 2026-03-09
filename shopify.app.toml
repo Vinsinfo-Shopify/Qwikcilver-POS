@@ -1,6 +1,6 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "37d55e5761fb795d8aba3e01bce14ba6"
+client_id = "7dcf15c0280f4f96ac3e3b6b07f4d89b"
 name = "QC-POS"
 application_url = "https://shopify.dev/apps/default-app-home"
 embedded = true
@@ -17,3 +17,6 @@ scopes = "read_products"
 
 [auth]
 redirect_urls = [ "https://shopify.dev/apps/default-app-home/api/auth" ]
+
+[pos]
+embedded = true

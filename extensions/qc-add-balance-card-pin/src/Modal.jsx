@@ -17,6 +17,8 @@ const Extension = () => {
   const [walletBalance, setWalletBalance] = useState(0);
   const [gNumber, setGNumber] = useState("");
   const [gPin, setGPin] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [hideCD, setHideCD] = useState("true");
 
   const shopDomain = shopify.session.currentSession.shopDomain;
   const APIEndpoint = getAPIEndpoint();
@@ -42,11 +44,13 @@ const Extension = () => {
 
   const addWalletBalance = async () => {
     try {
+      setIsLoading(true);
+
       const headers = generateHashHeaders(customer, shopDomain);
 
       const payload =
-        gNumber.length === 26 || gNumber.length === 31 || gNumber.length === 32
-          ? { TrackData: gNumber, gc_number: gPin }
+        gPin.length === 26 || gPin.length === 31 || gPin.length === 32
+          ? { TrackData: gPin, gc_number: gNumber }
           : { gc_number: gNumber, gc_pin: gPin };
 
       const res = await fetch(
@@ -78,6 +82,8 @@ const Extension = () => {
       shopify.toast.show("Added!");
     } catch (err) {
       shopify.toast.show("Invalid Code!");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -101,19 +107,19 @@ const Extension = () => {
 
   /* -------------------- BARCODE AUTO PIN -------------------- */
 
-  useEffect(() => {
-    if (!gNumber) return;
+  // useEffect(() => {
+  //   if (!gNumber) return;
 
-    const pin = scanUsingBarcode(gNumber);
-    if (pin) {
-      setGPin(pin);
-      if(gNumber.includes(';') && gNumber.includes('=') && gNumber.includes('?') || gNumber.length > 25){
-        // setGNumber(gNumber.replace(/[;?]/g, ""));
-        setGPin(gNumber);
-        setGNumber(pin);
-      }
-    }
-  }, [gNumber]);
+  //   const pin = scanUsingBarcode(gNumber);
+  //   if (pin) {
+  //     setGPin(pin);
+  //     if(gNumber.includes(';') && gNumber.includes('=') && gNumber.includes('?') || gNumber.length > 25){
+  //       // setGNumber(gNumber.replace(/[;?]/g, ""));
+  //       setGPin(gNumber);
+  //       setGNumber(pin);
+  //     }
+  //   }
+  // }, [gNumber]);
 
   /* -------------------- UI -------------------- */
 
@@ -132,7 +138,7 @@ const Extension = () => {
           <s-divider /> 
 
           <s-text-field
-            placeholder="Enter Card Number / Scan barcode / Swipe card"
+            placeholder="Enter Card Number"
             value={gNumber}
             onInput={(e) => setGNumber(e.target.value)}
             required
@@ -140,23 +146,29 @@ const Extension = () => {
 
           <s-text-field
             placeholder="Enter Pin Number"
-            value={gPin && ((gPin.includes(';') &&
-              gPin.includes('=') &&
-              gPin.includes('?')) ||
-              gPin.length > 25
-            )
-              ? '*'.repeat(gPin.length)
-              : gPin}
-            onInput={(e) => setGPin(e.target.value)}
+            value={'*'.repeat(gPin.length)}
+            onInput={e => {
+              const inputValue = e.target.value.replace(/•/g, '');
+              const previousLength = gPin.length;
+
+              if (inputValue.length > previousLength) {
+                // Characters added (typing or paste)
+                const addedChars = inputValue.slice(previousLength);
+                setGPin(gPin + addedChars);
+              } else {
+                // Characters removed (backspace)
+                setGPin(gPin.slice(0, inputValue.length));
+              }
+            }}
             required
           />
 
           <s-button
             variant="primary"
             onClick={addWalletBalance}
-            disabled={!gNumber || !gPin}
+            disabled={!gNumber || !gPin || isLoading}
           >
-            Add Balance
+            {isLoading ? "Adding..." : "Add Balance"}
           </s-button>
         </>
       ) : (

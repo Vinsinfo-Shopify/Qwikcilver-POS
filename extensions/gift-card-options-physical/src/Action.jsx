@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
+import { scanUsingBarcode } from "../../global";
 
 export default async () => {
   render(<Extension />, document.body);
@@ -38,6 +39,7 @@ function Extension() {
   const [cardNumber, setCardNumber] = useState('');
   const [isShowBuySelf, setIsShowBuySelf] = useState('loading');
   const [restrictCart, setRestrictCart] = useState("false");
+  const [hideCD, setHideCD] = useState("true");
 
   // Image template options
   const images = [
@@ -77,20 +79,20 @@ function Extension() {
   const handleSubmit = () => {
     const props = {};
     if (isShowBuySelf === 'true') {
-      props['Send as Gift'] = '';
-      props["Buy for Self"] = '';
+      // props['Send as Gift'] = '';
+      // props["Buy for Self"] = '';
       props["_Qc_card_number"] = cardNumber;
       if (buySelf === "true") {
         // props["_Qc_recipient_message"] = "";
         delete props["_Qc_img_url"];
-        props["Buy for Self"] = 'Yes';
+        // props["Buy for Self"] = 'Yes';
       } else {
-        props['Send as Gift'] = "Yes";
+        // props['Send as Gift'] = "Yes";
         props["_Qc_img_url"] = selectedImage;
         // props["Qc_recipient_message"] = wishMessage;
       }
     } else {
-      props['Send as Gift'] = "Yes";
+      // props['Send as Gift'] = "Yes";
       props["_Qc_card_number"] = cardNumber;
       props["_Qc_img_url"] = selectedImage;
       // props["Qc_recipient_message"] = wishMessage;
@@ -101,29 +103,29 @@ function Extension() {
 
   useEffect(() => {
     const props = currentLineItem.properties || {};
-    if([props['Send as Gift']] != ''){
-      setBuySelf("false");
-    }
-    if([props['Buy for Self']] != ''){
-      setBuySelf("true");
-    }
+    // if([props['Send as Gift']] != ''){
+    //   setBuySelf("false");
+    // }
+    // if([props['Buy for Self']] != ''){
+    //   setBuySelf("true");
+    // }
     if (props["_Qc_card_number"]) setCardNumber(props["_Qc_card_number"]);
     if (props["_Qc_img_url"]) {
       const savedImageUrl = props["_Qc_img_url"];
       setSelectedImage(savedImageUrl);
-      
+
       // Find which template contains this image
-      const templateWithImage = images.find(template => 
+      const templateWithImage = images.find(template =>
         template.images.includes(savedImageUrl)
       );
-      
+
       if (templateWithImage) {
         setSelectedTemplate(templateWithImage.name);
         setSelectedTemplateImage(templateWithImage.images);
       }
     }
 
-    
+
     async function getProductInfo() {
       const result = await queryProductMetafields(shopify.cartLineItem.productId);
       const metafields = result?.data?.product?.metafields?.edges ?? [];
@@ -134,7 +136,7 @@ function Extension() {
           item.node.key === "ShowBuyForSelfButton"
       );
 
-      const value = specificMetafield?.node?.value ?? null;
+      const value = specificMetafield?.node?.value ?? 'false'; // FIX: fallback to 'false' instead of null
       setIsShowBuySelf(value);
     }
     getProductInfo();
@@ -173,8 +175,22 @@ function Extension() {
     return true;
   };
 
-  if(restrictCart == "true"){
-    return(
+  const CardNumberSet = (value) => {
+    if (value.startsWith(';')) {
+      setHideCD("true");
+    }else{
+      setHideCD("false");
+    }
+    if((value.includes(';') && value.includes('=') && value.includes('?')) || value.length > 25){
+      setCardNumber(scanUsingBarcode(value));
+      setHideCD("false");
+    } else {
+      setCardNumber(value);
+    }
+  }
+
+  if (restrictCart == "true") {
+    return (
       <s-page>
         <s-text>You can't purchase both physical and digital gift products in the same cart. Please remove one of them.</s-text>
       </s-page>
@@ -182,9 +198,9 @@ function Extension() {
   }
 
   return (
-    <s-page heading="Gift Card Options - Physical">
+    <s-page heading="Enter Gift card details">
       <s-stack gap="small" direction="inline" justifyContent="center">
-        <s-badge tone="success">Note: Before placing the order, ensure the cart is set to ‘Ship all items.’</s-badge>
+        <s-badge tone="success">Note:Before placing the order, ensure the cart is set to 'Ship all items.'</s-badge>
       </s-stack>
       <s-scroll-box>
         {isShowBuySelf === 'loading' ? (
@@ -199,13 +215,42 @@ function Extension() {
                 <s-choice value="false" selected={buySelf === 'false'}>Send as Gift</s-choice>
               </s-choice-list>
             )} */}
-            <s-text type='strong'>Card Number</s-text>
-            <s-number-field
-              placeholder='Enter Card Number'
-              value={cardNumber}
-              required
-              onInput={e => setCardNumber(e.target.value)}
-            />
+            <s-text type='strong'>Enter Card Number</s-text>
+                <s-text-field
+                  placeholder='Enter Card Number'
+                  value={hideCD == "true" ? '*'.repeat(cardNumber.length) : cardNumber}
+                  required
+                  onPaste={e => {
+                    if (hideCD == "true") {
+                      e.preventDefault();
+                      const pastedText = e.clipboardData.getData('text');
+                      const newChars = pastedText.replace(/\D/g, '');
+                      if (newChars) {
+                        CardNumberSet(cardNumber + newChars);
+                      }
+                    }
+                  }}
+                  onInput={e => {
+                    const inputValue = e.target.value;
+
+                    if (hideCD == "true") {
+                      const currentLength = cardNumber.length;
+
+                      if (inputValue.length > currentLength) {
+                        const newChars = inputValue.slice(currentLength).replace(/\*/g, '');
+                        if (newChars) {
+                          CardNumberSet(cardNumber + newChars);
+                        } else {
+                          e.target.value = '*'.repeat(currentLength);
+                        }
+                      } else {
+                        CardNumberSet(cardNumber.slice(0, inputValue.length));
+                      }
+                    } else {
+                      CardNumberSet(inputValue);
+                    }
+                  }}
+                />
             {buySelf == 'false' && isShowBuySelf === 'true' && (
               <>
                 <s-text type='strong'>Choose a Gift Card Template</s-text>

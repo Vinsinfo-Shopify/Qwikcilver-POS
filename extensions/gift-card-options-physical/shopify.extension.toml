@@ -2,10 +2,10 @@ api_version = "2025-10"
 
 [[extensions]]
 type = "ui_extension"
-name = "Gift card options - Physical"
+name = "Enter Gift card details"
 uid = "7b7cd599-89af-5f08-33ff-51f87ed81c9da7c1a8ba"
 handle = "gift-card-options-physical"
-description = "Gift card options - Physical"
+description = "Enter Gift card details"
 
 # module: path to the file that contains your extension’s source code
 # target: string that describes where your extension appears in POS

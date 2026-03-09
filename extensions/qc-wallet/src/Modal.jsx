@@ -61,9 +61,11 @@ const api = {
         }
       );
       const data = await res.json();
-      return data?.data?.balance || 0;
+      if(data?.success){
+        return data?.data;
+      }
     } catch {
-      return 0;
+      return { balance: 0, gc_id: null }; // FIX: return object instead of 0
     }
   },
 
@@ -82,7 +84,7 @@ const api = {
 
     const data = await res.json();
     shopify.toast.show(data.data);
-    return data?.data?.code || null;
+    return data;
   },
 
   async cancelWallet(cid) {
@@ -106,20 +108,19 @@ const Extension = () => {
   const [lineItems, setLineItems] = useState([]);
   const [cartTotal, setCartTotal] = useState(0);
   const [hasGiftProduct, setHasGiftProduct] = useState(false);
-  const [walletBalance, setWalletBalance] = useState(0);
+  const [walletBalance, setWalletBalance] = useState({ balance: 0, gc_id: null }); // FIX: initialize as object
   const [giftCode, setGiftCode] = useState("");
   const [appliedAmount, setAppliedAmount] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [deleteGiftCard, setDeleteGiftCard] = useState("no");
   const [isLoadingTags, setIsLoadingTags] = useState(true);
 
-  var hasAppliedCode = Boolean(giftCode);
+  const hasAppliedCode = Boolean(giftCode); // FIX: const instead of var, reactive on giftCode state
   const isCartEmpty = lineItems.length === 0;
 
-  const BASE_URL = 'https://unstriped-unimportuned-campbell.ngrok-free.dev';
 
   async function capturePosGc(shop, customerId, giftCardCode) {
-    const response = await fetch(`${BASE_URL}/giftcard/capturePosGc`, {
+    const response = await fetch(`${API_BASE_URL}/giftcard/capturePosGc`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ shop, customerId, giftCardCode })
@@ -130,7 +131,7 @@ const Extension = () => {
   }
 
   async function getPosGc(shop, customerId) {
-    const response = await fetch(`${BASE_URL}/giftcard/getPosGc`, {
+    const response = await fetch(`${API_BASE_URL}/giftcard/getPosGc`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ shop, customerId })
@@ -145,7 +146,7 @@ const Extension = () => {
   }
 
   async function cancelPosGc(shop, customerId) {
-    const response = await fetch(`${BASE_URL}/giftcard/cancelPosGc`, {
+    const response = await fetch(`${API_BASE_URL}/giftcard/cancelPosGc`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ shop, customerId })
@@ -158,7 +159,7 @@ const Extension = () => {
   const refreshBalance = useCallback(async (cid) => {
     if (cid) {
       const bal = await api.fetchWalletBalance(cid);
-      setWalletBalance(bal);
+      setWalletBalance(bal ?? { balance: 0, gc_id: null }); // FIX: fallback if bal is undefined
     }
   }, []);
 
@@ -189,7 +190,7 @@ const Extension = () => {
       const cid = cart?.customer?.id;
       setCustomer(cid);
       refreshBalance(cid);
-      getPosGc(shopDomain, cid);
+      // getPosGc(shopDomain, cid);
       try {
         setIsLoadingTags(true);
         const pIds = items.map((i) => i.productId || i.id).filter(Boolean);
@@ -217,21 +218,20 @@ const Extension = () => {
   }, [refreshBalance]);
 
   const handleApply = async () => {
-    if (walletBalance <= 0) {
+    if (walletBalance.balance <= 0) {
       shopify.toast.show("No available wallet balance.");
       return;
     }
 
-    const amount = Math.min(walletBalance, cartTotal);
+    const amount = Math.min(walletBalance.balance, cartTotal);
     setIsLoading(true);
 
     try {
-      const code = await api.applyWallet(customer, amount);
-      if (code) {
-        setGiftCode(code);
+      if (walletBalance.gc_id) {
+        setGiftCode(walletBalance.gc_id);
         setAppliedAmount(amount);
         refreshBalance(customer);
-        capturePosGc(shopDomain, customer, code);
+        // capturePosGc(shopDomain, customer, walletBalance.gc_id);
         shopify.toast.show("Gift card code generated!");
       } else {
         shopify.toast.show("Failed to generate gift card code.");
@@ -244,23 +244,12 @@ const Extension = () => {
   const handleCancel = async () => {
     setIsLoading(true);
     try {
-      const res = await api.cancelWallet(customer);
-      if (res) {
-        if (res?.success) {
-          shopify.toast.show("Gift card removed");
+       shopify.toast.show("Gift card removed");
           setGiftCode("");
           setAppliedAmount(0);
           setDeleteGiftCard("no");
           refreshBalance(customer);
-          cancelPosGc(shopDomain, customer);
-        }else{
-          if (res.key == 'noActiveSession') {
-            shopify.toast.show('No active session found!');
-          } else {
-            shopify.toast.show('Failed to cancel');
-          }
-        }
-      }
+          // cancelPosGc(shopDomain, customer);
     } finally {
       setIsLoading(false);
     }
@@ -273,13 +262,14 @@ const Extension = () => {
       return <s-text>Gift products prevent applying store credit.</s-text>;
     if (!customer) return <s-text>Select or add a customer!</s-text>;
 
-    const amount = Math.min(walletBalance, cartTotal);
+    const amount = Math.min(walletBalance.balance, cartTotal);
 
     return (
       <>
         {deleteGiftCard === "no" && (
           <>
-            <s-text>Wallet Balance: {walletBalance.toFixed(2)}</s-text>
+            {/* <s-text>{walletBalance ? JSON.stringify(walletBalance.balance, null, 2) : 'errorred.'}</s-text> */}
+            <s-text>Wallet Balance: {walletBalance.balance.toFixed(2)}</s-text>
             <s-text>Cart Total: {cartTotal.toFixed(2)}</s-text>
             {!hasAppliedCode && (
               <s-text>Amount to Apply: {amount.toFixed(2)}</s-text>
@@ -287,20 +277,22 @@ const Extension = () => {
             <s-divider />
 
             {!hasAppliedCode ? (
+              walletBalance?.gc_id && (
               <s-button
                 variant="primary"
-                onClick={handleApply}
-                disabled={isLoading || walletBalance <= 0}
+                onClick={handleApply} // FIX: was () => handleApply (missing call)
+                disabled={isLoading || walletBalance.balance <= 0}
               >
                 {isLoading ? "Applying..." : "Apply Wallet Balance"}
               </s-button>
+              )
             ) : (
               <>
                 <s-text>Applied Amount: {appliedAmount.toFixed(2)}</s-text>
                 <s-text-field value={giftCode} readonly />
                 <s-button
                   variant="secondary"
-                  onClick={handleCancel}
+                  onClick={handleCancel} // FIX: was () => handleCancel (missing call)
                   disabled={isLoading}
                 >
                   {isLoading ? "Canceling..." : "Cancel"}

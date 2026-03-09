@@ -102,21 +102,21 @@ const Extension = () => {
   }, []);
 
   // ✅ Barcode / swipe handling
-  useEffect(() => {
-    if (
-      gCode.length === 26 ||
-      gCode.length === 31 ||
-      gCode.length === 32 ||
-      (gCode.includes(";") && gCode.includes("=") && gCode.includes("?"))
-    ) {
-      const value = scanUsingBarcode(gCode);
-      setBarCode(gCode);
-      setGCode(value);
-      if(gCode.includes(';') && gCode.includes('=') && gCode.includes('?')){
-        setBarCode(gCode.replace(/[;?]/g, ""));
-      }
-    }
-  }, [gCode]);
+  // useEffect(() => {
+  //   if (
+  //     gCode.length === 26 ||
+  //     gCode.length === 31 ||
+  //     gCode.length === 32 ||
+  //     (gCode.includes(";") && gCode.includes("=") && gCode.includes("?"))
+  //   ) {
+  //     const value = scanUsingBarcode(gCode);
+  //     setBarCode(gCode);
+  //     setGCode(value);
+  //     if(gCode.includes(';') && gCode.includes('=') && gCode.includes('?')){
+  //       setBarCode(gCode.replace(/[;?]/g, ""));
+  //     }
+  //   }
+  // }, [gCode]);
 
   return (
     <s-box padding="small">
@@ -131,7 +131,7 @@ const Extension = () => {
           <s-divider />
 
           <s-text-field
-            placeholder="Enter Pin / Scan barcode / Swipe card"
+            placeholder="Enter Pin"
             value={gCode}
             onInput={(e) => setGCode(e.target.value)}
           />

@@ -211,7 +211,7 @@ function Extension() {
           item.node.key === "ShowBuyForSelfButton"
       );
 
-      const value = specificMetafield?.node?.value ?? 'null';
+      const value = specificMetafield?.node?.value ?? 'true';
       setIsShowBuySelf(value);
     }
     getProductInfo();
@@ -262,7 +262,7 @@ function Extension() {
   }
 
   return (
-    <s-page heading="Gift Card Options">
+    <s-page heading="Update Gift card details">
       <s-scroll-box>
         {isShowBuySelf === 'loading' ? (
           <s-box padding="small">

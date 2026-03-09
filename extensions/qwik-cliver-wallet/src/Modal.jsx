@@ -67,7 +67,7 @@ const Extension = () => {
   const [lineItems, setLineItems] = useState([]);
   const [lineItemCount, setLineItemCount] = useState(0);
   const [hasGiftProduct, setHasGiftProduct] = useState(false);
-  const [cards, setCards] = useState([{ cardNumber: '', pinNumber: '' }]);
+  const [cards, setCards] = useState([{ cardNumber: '', pinNumber: '', balance: '' }]);
   const [customer, setCustomer] = useState(null);
   const [balance, setBalance] = useState(0);
   const [showRedeem, setShowRedeem] = useState(false);
@@ -78,7 +78,10 @@ const Extension = () => {
   const [deleteGiftCard, setDeleteGiftCard] = useState('no');
   const [isLoadingTags, setIsLoadingTags] = useState(true);
   const [productTags, setProductTags] = useState([]);
+  const [ressss, setResss] = useState('');
+  const [cartTotal, setCartTotal] = useState(0);
 
+  
   const API_BASE_URL = getAPIEndpoint();
   const SHOP_DOMAIN = shopify?.session?.currentSession?.shopDomain;
 
@@ -92,6 +95,12 @@ const Extension = () => {
       }
 
       const items = cart.lineItems;
+
+      const total = items.reduce(
+        (sum, i) => sum + i.quantity * parseFloat(i.price || 0),
+        0
+      );
+      setCartTotal(total);
       setLineItems(items);
       setLineItemCount(items.length);
       setCustomer(cart.customer?.id);
@@ -161,10 +170,9 @@ const Extension = () => {
     initialize();
   }, []);
 
-    const BASE_URL = 'https://unstriped-unimportuned-campbell.ngrok-free.dev';
 
     async function capturePosGc(shop, customerId, giftCardCode) {
-      const response = await fetch(`${BASE_URL}/giftcard/capturePosGc`, {
+      const response = await fetch(`${API_BASE_URL}/giftcard/capturePosGc`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ shop, customerId, giftCardCode })
@@ -175,7 +183,7 @@ const Extension = () => {
     }
 
     async function getPosGc(shop, customerId) {
-      const response = await fetch(`${BASE_URL}/giftcard/getPosGc`, {
+      const response = await fetch(`${BASAPI_BASE_URLE_URL}/giftcard/getPosGc`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ shop, customerId })
@@ -191,7 +199,7 @@ const Extension = () => {
     }
 
     async function cancelPosGc(shop, customerId) {
-      const response = await fetch(`${BASE_URL}/giftcard/cancelPosGc`, {
+      const response = await fetch(`${API_BASE_URL}/giftcard/cancelPosGc`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ shop, customerId })
@@ -263,8 +271,30 @@ const Extension = () => {
       });
 
       const data = await response.json();
-      setBalance(data?.data?.balance || 0);
-      setShowRedeem(true);
+      if(data.data.cards.length){
+      setCards(data.data.cards
+        .map(card => ({
+          cardNumber: card.CardNumber,
+          pinNumber: card.CardPin || card.TrackData,
+          balance: card.Balance
+        }))
+        .sort((a, b) => b.balance - a.balance)); 
+        
+      }else{
+        setCards([{ cardNumber: '', pinNumber: '', balance: '' }]);
+      }
+
+     if (!data?.success) {
+        shopify.toast.show(data?.message || "Invalid Code!");
+        return;
+      }
+
+      if(data?.data?.balance == 0){
+        shopify.toast.show("No amount associated with this card. Please check your details.")
+      }else{
+        setBalance(data?.data?.balance);
+        setShowRedeem(true);
+      }
     } catch (error) {
       shopify.toast.show('Failed to validate cards');
       console.error('Validation error:', error);
@@ -272,6 +302,23 @@ const Extension = () => {
       setIsLoading(false);
     }
   };
+
+  function generateExpiryDate() {
+      const expiryDate = new Date();
+
+      // Add 6 months instead of 2 years
+      expiryDate.setMonth(expiryDate.getMonth() + 2);
+
+      const year = expiryDate.getFullYear();
+      const month = (expiryDate.getMonth() + 1).toString().padStart(2, '0');
+      const day = expiryDate.getDate().toString().padStart(2, '0');
+      const hours = expiryDate.getHours().toString().padStart(2, '0');
+      const minutes = expiryDate.getMinutes().toString().padStart(2, '0');
+      const seconds = expiryDate.getSeconds().toString().padStart(2, '0');
+      const offset = "+05:30";  // Adjust to your timezone offset if needed
+
+      return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}${offset}`;
+  }
 
   const handleRedeem = async () => {
     const amount = Number(redeemAmount);
@@ -290,14 +337,22 @@ const Extension = () => {
     try {
       const headers = preauthGenerateHashHeaders(SHOP_DOMAIN);
 
+      // Distribute amount across cards sequentially
+      let remainingAmount = amount;
+
       const cardArray = cards.map(card => {
+        if (remainingAmount <= 0) return null;
+
+        const cardAmount = Math.min(card.balance, remainingAmount);
+        remainingAmount -= cardAmount;
+
         if ((card.pinNumber.includes(';') && card.pinNumber.includes('=') && card.pinNumber.includes('?') || card.pinNumber.length > 25)) {
           return {
             CardNumber: card.cardNumber,
             TrackData: card.pinNumber,
             CurrencyCode: shopify.session.currentSession.currency,
-            ExpiryDate: "2026-06-15T16:07:58+05:30",
-            Amount: amount
+            ExpiryDate: generateExpiryDate(),
+            Amount: cardAmount
           };
         }
         // if (card.cardNumber.length > 25) {
@@ -314,10 +369,17 @@ const Extension = () => {
           CardNumber: card.cardNumber,
           CardPin: card.pinNumber,
           CurrencyCode: shopify.session.currentSession.currency,
-          ExpiryDate: "2026-06-15T16:07:58+05:30",
-          Amount: amount
+          ExpiryDate: generateExpiryDate(),
+          Amount: cardAmount
         };
-      });
+      }).filter(card => card !== null);
+
+      setResss(cardArray);
+
+      if (amount >= cartTotal) {
+        shopify.toast.show('Redeem amount is more than cart total');
+        return;
+      }
 
       const response = await fetch(`${API_BASE_URL}/preauth/preauth`, {
         method: 'POST',
@@ -419,7 +481,7 @@ const Extension = () => {
 
   return (
     <s-scroll-box>
-
+{/* <s-text>{ressss ? JSON.stringify(ressss, null, 2) : 'errorred...'}</s-text> */}
       <s-box padding="small">
         {lineItemCount !== 0 ? (
           isLoadingTags ? (
@@ -451,29 +513,41 @@ const Extension = () => {
                               </s-text>
 
                               <s-text-field
-                                label="Card Number / Scan barcode / Swipe card"
+                                label="Enter Card Number / Scan barcode / Swipe card"
                                 value={card.cardNumber}
                                 onInput={e =>
                                   handleCardChange(index, 'cardNumber', e.target.value)
                                 }
                               />
 
-                              <s-text-field
+                                <s-text-field
                                   label="PIN Number"
-                                  value={
-                                    card.pinNumber &&
-                                    (
-                                      (card.pinNumber.includes(';') &&
-                                      card.pinNumber.includes('=') &&
-                                      card.pinNumber.includes('?')) ||
-                                      card.pinNumber.length > 25
-                                    )
-                                      ? '*'.repeat(card.pinNumber.length)
-                                      : card.pinNumber
-                                  }
-                                  onInput={e =>
-                                    handleCardChange(index, 'pinNumber', e.target.value)
-                                  }
+                                  value={'*'.repeat(card.pinNumber.length)}
+                                  onPaste={e => {
+                                    e.preventDefault();
+                                    const pastedText = e.clipboardData.getData('text');
+                                    const newChars = pastedText.replace(/\D/g, '');
+                                    if (newChars) {
+                                      handleCardChange(index, 'pinNumber', card.pinNumber + newChars);
+                                    }
+                                  }}
+                                  onInput={e => {
+                                    const inputValue = e.target.value;
+                                    const currentLength = card.pinNumber.length;
+
+                                    if (inputValue.length > currentLength) {
+                                      // Only take chars that aren't asterisks (newly typed)
+                                      const newChars = inputValue.slice(currentLength).replace(/\*/g, '');
+                                      if (newChars) {
+                                        handleCardChange(index, 'pinNumber', card.pinNumber + newChars);
+                                      } else {
+                                        // Force re-render to snap back to masked value
+                                        e.target.value = '*'.repeat(currentLength);
+                                      }
+                                    } else {
+                                      handleCardChange(index, 'pinNumber', card.pinNumber.slice(0, inputValue.length));
+                                    }
+                                  }}
                                 />
 
 
@@ -515,6 +589,8 @@ const Extension = () => {
                               <s-text style={{ fontWeight: 'bold', fontSize: '18px' }}>
                                 Available Balance: {getCurrencySymbol(shopify.session.currentSession.currency)} {balance}
                               </s-text>
+
+                              <s-text>Cart Total: {cartTotal.toFixed(2)}</s-text>
 
                               <s-text style={{ marginTop: '12px' }}>
                                 Enter amount you want to redeem
